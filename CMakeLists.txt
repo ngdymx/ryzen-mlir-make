@@ -50,9 +50,9 @@ message("opencv libs: ${OpenCV_LIBS}")
 
 
 add_executable(${currentTarget}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../mlir-aie/programming_examples/utils/OpenCVUtils.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../mlir-aie/programming_examples/utils/xrtUtils.cpp
-    test.cpp
+    /home/nock8/mlir-aie/programming_examples/utils/OpenCVUtils.cpp
+    /home/nock8/mlir-aie/runtime_lib/test_lib/test_utils.cpp
+    host/host.cpp
 )
 
 target_compile_definitions(${currentTarget} PUBLIC
@@ -62,7 +62,8 @@ target_compile_definitions(${currentTarget} PUBLIC
         )
 
 target_include_directories (${currentTarget} PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../mlir-aie/programming_examples/utils
+    /home/nock8/mlir-aie/programming_examples/utils
+    /home/nock8/mlir-aie/runtime_lib/test_lib
     ${XRT_INC_DIR}
     ${OpenCV_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}

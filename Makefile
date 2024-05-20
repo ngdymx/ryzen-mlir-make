@@ -23,7 +23,7 @@ CHESSCCWRAP2_FLAGS = aie2 -I ${VITIS_AIETOOLS_DIR}/include
 
 
 HOST_O_DIR := build/host
-HOST_C_TARGET := ${HOST_O_DIR}/host.exe
+HOST_C_TARGET := host.exe
 
 KERNEL_O_DIR := build/bitstream
 KERNEL_SRCS := $(wildcard $(SRCDIR)/kernel/*.cc)
@@ -37,7 +37,7 @@ BITSTREAM_O_DIR := build/bitstream
 XCLBIN_TARGET := ${BITSTREAM_O_DIR}/final.xclbin
 INSTS_TARGET := ${BITSTREAM_O_DIR}/insts.txt
 
-.PHONY: all kernel link bitstream clean
+.PHONY: all kernel link bitstream host clean
 all: ${XCLBIN_TARGET} ${INSTS_TARGET} ${HOST_C_TARGET}
 
 
@@ -54,13 +54,16 @@ link: ${MLIR_TARGET}
 bitstream: ${XCLBIN_TARGET}
 
 
+host: ${HOST_C_TARGET}
+
 
 # Build host
 ${HOST_C_TARGET}: ${SRCDIR}/host/host.cpp 
-	rm -rf build/host
-	mkdir -p _build
-	cd _build && ${powershell} cmake -E env CXXFLAGS="-std=c++23 -ggdb" cmake .. -D CMAKE_C_COMPILER=gcc-13 -D CMAKE_CXX_COMPILER=g++-13 -DTARGET_NAME=${HOST_C_TARGET} -Dsubdir=${subdir}
-	cd _build && ${powershell} cmake --build . --config Release
+	rm -rf ${HOST_O_DIR}
+	mkdir -p ${HOST_O_DIR}
+	cd ${HOST_O_DIR} && cmake -E env CXXFLAGS="-std=c++23 -ggdb" cmake ../.. -D CMAKE_C_COMPILER=gcc-13 -D CMAKE_CXX_COMPILER=g++-13 -DTARGET_NAME=${HOST_C_TARGET} -Dsubdir=${subdir}
+	cd ${HOST_O_DIR} && cmake --build . --config Release
+	cp ${HOST_O_DIR}/${HOST_C_TARGET} ./
 
 # Build kernels
 ${KERNEL_O_DIR}/%.o: ${SRCDIR}/kernel/%.cc ${KERNEL_HEADERS}
@@ -81,12 +84,12 @@ ${XCLBIN_TARGET}: ${MLIR_TARGET} ${KERNEL_OBJS}
 .PHONY: run
 run: ${HOST_C_TARGET} ${XCLBIN_TARGET} ${INSTS_TARGET} #sign
 	export XRT_HACK_UNSECURE_LOADING_XCLBIN=1 && \
-	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE -M $M -K $K -N $N ${runargs}
+	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE 
 
 trace: ${HOST_C_TARGET} ${XCLBIN_TARGET} ${INSTS_TARGET} # sign
 	export XRT_HACK_UNSECURE_LOADING_XCLBIN=1 && \
-	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE -M $M -K $K -N $N -v 1 --warmup 0 --iters 1 -t ${trace_size}
-	../parse_trace.py --filename trace.txt --mlir ${MLIR_TARGET} --colshift 1 > trace_mm.json
+	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE
+	./parse_trace.py --filename trace.txt --mlir ${MLIR_TARGET} --colshift 1 > trace_mm.json
 
 run_py: ${XCLBIN_TARGET} ${INSTS_TARGET} ${SRCDIR}/host/test.py
 	python3 ${SRCDIR}/host/test.py -x ${<} -i ${INSTS_TARGET} -k MLIR_AIE
