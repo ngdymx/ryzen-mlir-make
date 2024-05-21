@@ -19,8 +19,7 @@ CHESS_FLAGS = -P ${VITIS_AIE_INCLUDE_DIR}
 CHESSCCWRAP1_FLAGS = aie -I ${VITIS_AIETOOLS_DIR}/include 
 CHESSCCWRAP2_FLAGS = aie2 -I ${VITIS_AIETOOLS_DIR}/include 
 
-
-
+trace_size = 8192
 
 HOST_O_DIR := build/host
 HOST_C_TARGET := host.exe
@@ -40,10 +39,11 @@ INSTS_TARGET := ${BITSTREAM_O_DIR}/insts.txt
 .PHONY: all kernel link bitstream host clean
 all: ${XCLBIN_TARGET} ${INSTS_TARGET} ${HOST_C_TARGET}
 
-
 clean:
 	-@rm -rf build 
 	-@rm -rf log
+	-@rm trace.txt
+	-@rm *.json
 
 kernel: ${KERNEL_OBJS}
 
@@ -84,11 +84,11 @@ ${XCLBIN_TARGET}: ${MLIR_TARGET} ${KERNEL_OBJS}
 .PHONY: run
 run: ${HOST_C_TARGET} ${XCLBIN_TARGET} ${INSTS_TARGET} #sign
 	export XRT_HACK_UNSECURE_LOADING_XCLBIN=1 && \
-	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE  -t 8192
+	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE
 
 trace: ${HOST_C_TARGET} ${XCLBIN_TARGET} ${INSTS_TARGET} # sign
 	export XRT_HACK_UNSECURE_LOADING_XCLBIN=1 && \
-	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE -t 8192
+	./$< -x ${XCLBIN_TARGET} -i ${INSTS_TARGET} -k MLIR_AIE -t ${trace_size}
 	./parse_trace.py --filename trace.txt --mlir ${MLIR_TARGET} --colshift 1 > trace_mm.json
 
 run_py: ${XCLBIN_TARGET} ${INSTS_TARGET} ${SRCDIR}/host/test.py
