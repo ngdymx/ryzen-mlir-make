@@ -11,27 +11,23 @@ from aie.dialects.aie import *
 from aie.dialects.aiex import *
 from aie.dialects.scf import *
 from aie.extras.context import mlir_mod_ctx
-from aie.extras.dialects.ext import memref, arith
 
-import sys
-
-
-def my_reduce_add():
-    N = 1024
-
-    buffer_depth = 2
+import aie.utils.trace as trace_utils
 
 
-    dev = AIEDevice.npu1_1col
+def my_vector_scalar():
 
-    @device(dev)
+    enableTrace = True
+    trace_size = 8192
+
+    @device(AIEDevice.npu1_1col)
     def device_body():
-        memRef_I_ty = T.memref(N, T.i32())
-        memRef_O_ty = T.memref(1, T.i32())
+        memRef_ty = T.memref(1024, T.i32())
 
         # AIE Core Function declarations
-        reduce_add_vector = external_func(
-            "reduce_add_vector", inputs=[memRef_I_ty, memRef_O_ty, T.i32()]
+        scale_scalar = external_func(
+            "vector_scalar_mul_aie_scalar",
+            inputs=[memRef_ty, memRef_ty, T.memref(1, T.i32()), T.i32()],
         )
 
         # Tile declarations
@@ -39,34 +35,57 @@ def my_reduce_add():
         ComputeTile2 = tile(0, 2)
 
         # AIE-array data movement with object fifos
-        of_in = object_fifo("in", ShimTile, ComputeTile2, buffer_depth, memRef_I_ty)
-        of_out = object_fifo("out", ComputeTile2, ShimTile, buffer_depth, memRef_O_ty)
+        of_in = object_fifo("in", ShimTile, ComputeTile2, 2, memRef_ty)
+        of_factor = object_fifo(
+            "infactor", ShimTile, ComputeTile2, 2, T.memref(1, T.i32())
+        )
+        of_out = object_fifo("out", ComputeTile2, ShimTile, 2, memRef_ty)
 
         # Set up compute tiles
-
         # Compute tile 2
-        @core(ComputeTile2, "reduce_add.o")
+        @core(ComputeTile2, "scale.o")
         def core_body():
-            for _ in for_(0xFFFFFFFF):
-                elem_out = of_out.acquire(ObjectFifoPort.Produce, 1)
-                elem_in = of_in.acquire(ObjectFifoPort.Consume, 1)
-                call(reduce_add_vector, [elem_in, elem_out, N])
-                of_in.release(ObjectFifoPort.Consume, 1)
-                of_out.release(ObjectFifoPort.Produce, 1)
+            # Effective while(1)
+            for _ in for_(sys.maxsize):
+                elem_factor = of_factor.acquire(ObjectFifoPort.Consume, 1)
+                # Number of sub-vector "tile" iterations
+                for _ in for_(4):
+                    elem_out = of_out.acquire(ObjectFifoPort.Produce, 1)
+                    elem_in = of_in.acquire(ObjectFifoPort.Consume, 1)
+                    call(scale_scalar, [elem_in, elem_out, elem_factor, 1024])
+                    of_in.release(ObjectFifoPort.Consume, 1)
+                    of_out.release(ObjectFifoPort.Produce, 1)
+                    yield_([])
+                of_factor.release(ObjectFifoPort.Consume, 1)
                 yield_([])
 
-        # To/from AIE-array data movement
-        tensor_ty = T.memref(N, T.i32())
+        # Set up a circuit-switched flow from core to shim for tracing information
+        if enableTrace:
+            flow(ComputeTile2, WireBundle.Trace, 0, ShimTile, WireBundle.DMA, 1)
 
-        @FuncOp.from_py_func(tensor_ty, tensor_ty)
-        def sequence(A, C):
-            npu_dma_memcpy_nd(metadata="out", bd_id=0, mem=C, sizes=[1, 1, 1, 1])
-            npu_dma_memcpy_nd(metadata="in", bd_id=1, mem=A, sizes=[1, 1, 1, N])
+        # To/from AIE-array data movement
+        tensor_ty = T.memref(4096, T.i32())
+        scalar_ty = T.memref(1, T.i32())
+
+        @FuncOp.from_py_func(tensor_ty, scalar_ty, tensor_ty)
+        def sequence(A, F, C):
+            if enableTrace:
+                trace_utils.configure_simple_tracing_aie2(
+                    ComputeTile2,
+                    ShimTile,
+                    ddr_id=2,
+                    size=trace_size,
+                    offset=4096 * 4,  # offset in bytes
+                )
+
+            npu_dma_memcpy_nd(metadata="out", bd_id=0, mem=C, sizes=[1, 1, 1, 4096])
+            npu_dma_memcpy_nd(metadata="in", bd_id=1, mem=A, sizes=[1, 1, 1, 4096])
+            npu_dma_memcpy_nd(metadata="infactor", bd_id=2, mem=F, sizes=[1, 1, 1, 1])
             npu_sync(column=0, row=0, direction=0, channel=0)
 
 
 with mlir_mod_ctx() as ctx:
-    my_reduce_add()
+    my_vector_scalar()
     res = ctx.module.operation.verify()
     if res == True:
         print(ctx.module)
