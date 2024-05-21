@@ -44,6 +44,7 @@ clean:
 	-@rm -rf log
 	-@rm trace.txt
 	-@rm *.json
+	-@rm host.exe
 
 kernel: ${KERNEL_OBJS}
 
