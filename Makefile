@@ -79,7 +79,7 @@ ${MLIR_TARGET}: ${SRCDIR}/kernel/aie2.py
 # Build bitstream
 ${XCLBIN_TARGET}: ${MLIR_TARGET} ${KERNEL_OBJS}
 	mkdir -p ${@D}
-	cd ${BITSTREAM_O_DIR} && aiecc.py --aie-generate-cdo --no-compile-host --xclbin-name=${@F} \
+	cd ${BITSTREAM_O_DIR} && aiecc.py --aie-generate-cdo --no-compile-host --basic-alloc-scheme --xclbin-name=${@F} \
 		--aie-generate-npu --npu-insts-name=${INSTS_TARGET:${BITSTREAM_O_DIR}/%=%} $(<:${MLIR_O_DIR}/%=../mlir/%) 
 
 .PHONY: run
@@ -93,5 +93,5 @@ trace: ${HOST_C_TARGET} ${XCLBIN_TARGET} ${INSTS_TARGET} # sign
 	./parse_trace.py --filename trace.txt --mlir ${MLIR_TARGET} --colshift 1 > trace_mm.json
 
 run_py: ${XCLBIN_TARGET} ${INSTS_TARGET} ${SRCDIR}/host/test.py
-	python3 ${SRCDIR}/host/test.py -x ${<} -i ${INSTS_TARGET} -k MLIR_AIE -t 8192
+	python3 ${SRCDIR}/host/test.py -x ${<} -i ${INSTS_TARGET} -k MLIR_AIE
 
